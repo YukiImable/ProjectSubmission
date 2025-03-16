@@ -61,6 +61,8 @@ st.header('Dashboard Penyewaan Sepedah 🚲')
 
 # Subheader 1: Visualisasi Sewa Harian
 st.subheader('Sewa Harian')
+
+# Inisialisasi kolom
 col1, col2 = st.columns(2)
 
 # Menampilkan metrik total dan rata-rata rental sepeda
@@ -71,7 +73,7 @@ with col1:
 with col2:
     avg_rentals = daily_summary_df.total_rentals.mean()
     st.metric("Average Daily Rentals", value=int(avg_rentals))
-
+    
 # Membuat grafik jumlah penyewaan harian
 fig, ax = plt.subplots(figsize=(16, 8))
 ax.plot(
@@ -112,6 +114,47 @@ ax.set_xticklabels(weather_categories, rotation=0)
 ax.set_ylabel("[Total Rentals]")
 ax.ticklabel_format(style='plain', axis='y')
 st.pyplot(fig, clear_figure=True)
+
+# Subheader 3: Visualisasi Puncak Penyewaan
+st.subheader('Puncak Penyewaan')
+
+# Mengelompokkan data berdasarkan tanggal dan jam kerja, lalu mencari jam dengan jumlah penyewaan tertinggi
+peak_rental_df = main_df.groupby(["dteday", "workingday_hour"]).agg({"hr": lambda x: x.loc[main_df.loc[x.index, "cnt_hour"].idxmax()]})
+peak_rental_df = peak_rental_df.reset_index()
+
+# Membuat grafik dengan warna garis berbeda untuk hari kerja dan akhir pekan
+fig, ax = plt.subplots(figsize=(16, 8))
+
+# Menyiapkan variabel untuk menggambar garis
+prev_day_type = peak_rental_df["workingday_hour"].iloc[0]
+x_vals = [peak_rental_df["dteday"].iloc[0]]
+y_vals = [peak_rental_df["hr"].iloc[0]]
+colors = {1: "skyblue", 0: "orange"}
+
+# Menggambar garis berdasarkan perubahan jenis hari
+for i in range(1, len(peak_rental_df)):
+    current_day_type = peak_rental_df["workingday_hour"].iloc[i]
+    x_vals.append(peak_rental_df["dteday"].iloc[i])
+    y_vals.append(peak_rental_df["hr"].iloc[i])
+    
+    # Jika jenis hari berubah, gambar garis dan mulai segmen baru
+    if current_day_type != prev_day_type or i == len(peak_rental_df) - 1:
+        ax.plot(x_vals, y_vals, marker='o', linewidth=2, color=colors[prev_day_type])
+        x_vals = [peak_rental_df["dteday"].iloc[i]]
+        y_vals = [peak_rental_df["hr"].iloc[i]]
+        prev_day_type = current_day_type
+        
+# Menambahkan legenda di pojok kiri atas untuk tiap jenis warna garis
+legend_labels = [plt.Line2D([0], [0], color="skyblue", marker='o', linestyle='', markersize=8, label="Hari Kerja"),
+                plt.Line2D([0], [0], color="orange", marker='o', linestyle='', markersize=8, label="Akhir Pekan")]
+ax.legend(handles=legend_labels, loc="upper left")
+
+# Menampilkan grafik puncak penyewaan
+ax.set_ylabel("[Rental Peak Hours]", fontsize=15)
+ax.set_yticks([0, 4, 8, 12, 16, 20, 24])
+ax.tick_params(axis='y', labelsize=12)
+ax.tick_params(axis='x', labelsize=10)
+st.pyplot(fig)
 
 # Caption
 st.caption('Copyright © Dimas Adista Perdana 2025, ありがとうございます。')
