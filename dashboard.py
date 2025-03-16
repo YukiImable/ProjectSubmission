@@ -6,19 +6,18 @@ from babel.numbers import format_currency
 sns.set(style='dark')
 
 # Menyiapkan dataframe
-# create_daily_summary_df untuk mengelompokkan data per hari
+# create_daily_summary_df untuk mengelompokkan data berdasarkan hari
 def create_daily_summary_df(df):
     df['dteday'] = pd.to_datetime(df['dteday'])
     daily_summary_df = df[['dteday', 'cnt_day']].drop_duplicates().reset_index(drop=True)
     daily_summary_df.rename(columns={"cnt_day": "total_rentals"}, inplace=True)
     return daily_summary_df
 
-# create_hourly_summary_df untuk mengelompokkan data per jam
-def create_hourly_summary_df(df):
-    df['dteday'] = pd.to_datetime(df['dteday'])
-    hourly_summary_df = df.groupby(['dteday', 'hr']).agg({"cnt_hour": "sum"}).reset_index()
-    hourly_summary_df.rename(columns={"cnt_hour": "hourly_rentals"}, inplace=True)
-    return hourly_summary_df
+# create_hourly_rental_df untuk mengelompokkan data berdasarkan jam dan tipe hari
+def create_hourly_rental_df(df):
+    hourly_rental_df = df.groupby(["hr", "workingday_hour"]).agg({"cnt_hour": "mean"}).reset_index()
+    hourly_rental_df.replace({"workingday_hour": {1: "Hari Kerja", 0: "Akhir Pekan"}}, inplace=True)
+    return hourly_rental_df
 
 # Load file main_data.csv
 all_df = pd.read_csv("main_data.csv")
@@ -54,7 +53,7 @@ main_df = all_df[(all_df["dteday"] >= str(start_date)) &
 
 # Memanggil helper function
 daily_summary_df = create_daily_summary_df(main_df)
-hourly_summary_df = create_hourly_summary_df(main_df)
+hourly_rental_df = create_hourly_rental_df(main_df)
 
 # Dashboard Header
 st.header('Dashboard Penyewaan Sepedah 🚲')
@@ -108,7 +107,7 @@ fig, ax = plt.subplots(figsize=(8, 5))
 rental_by_weather.plot(kind="bar", color=["skyblue", "lightgray", "lightgray"], ax=ax)
 
 # Menampilkan grafik jumlah penyewaan berdasarkan cuaca
-ax.set_title(f"Bike Rental Intensity Based on The Weather \n ({start_date} s.d. {end_date})")
+ax.set_title(f"Bike Rental Intensity Based on The Weather\n({start_date} s.d. {end_date})")
 ax.set_xlabel("[Weather Conditions]")
 ax.set_xticklabels(weather_categories, rotation=0)
 ax.set_ylabel("[Total Rentals]")
@@ -116,44 +115,30 @@ ax.ticklabel_format(style='plain', axis='y')
 st.pyplot(fig, clear_figure=True)
 
 # Subheader 3: Visualisasi Puncak Penyewaan
-st.subheader('Puncak Penyewaan')
+st.subheader('Pola Penyewaan Sepeda Berdasarkan Jam')
 
-# Mengelompokkan data berdasarkan tanggal dan jam kerja, lalu mencari jam dengan jumlah penyewaan tertinggi
-peak_rental_df = main_df.groupby(["dteday", "workingday_hour"]).agg({"hr": lambda x: x.loc[main_df.loc[x.index, "cnt_hour"].idxmax()]})
-peak_rental_df = peak_rental_df.reset_index()
+# Filter data berdasarkan rentang waktu
+main_df = all_df[(all_df["dteday"] >= str(start_date)) & (all_df["dteday"] <= str(end_date))]
+hourly_rental_df = create_hourly_rental_df(main_df)
 
-# Membuat grafik dengan warna garis berbeda untuk hari kerja dan akhir pekan
-fig, ax = plt.subplots(figsize=(16, 8))
-
-# Menyiapkan variabel untuk menggambar garis
-prev_day_type = peak_rental_df["workingday_hour"].iloc[0]
-x_vals = [peak_rental_df["dteday"].iloc[0]]
-y_vals = [peak_rental_df["hr"].iloc[0]]
-colors = {1: "skyblue", 0: "orange"}
-
-# Menggambar garis berdasarkan perubahan jenis hari
-for i in range(1, len(peak_rental_df)):
-    current_day_type = peak_rental_df["workingday_hour"].iloc[i]
-    x_vals.append(peak_rental_df["dteday"].iloc[i])
-    y_vals.append(peak_rental_df["hr"].iloc[i])
+# Membuat visualisasi
+fig, ax = plt.subplots(figsize=(10, 5))
+for day_type in ["Hari Kerja", "Akhir Pekan"]:
+    subset = hourly_rental_df[hourly_rental_df["workingday_hour"] == day_type]
+    ax.plot(subset["hr"], subset["cnt_hour"], marker='o', linestyle='-', label=day_type, linewidth=2)
     
-    # Jika jenis hari berubah, gambar garis dan mulai segmen baru
-    if current_day_type != prev_day_type or i == len(peak_rental_df) - 1:
-        ax.plot(x_vals, y_vals, marker='o', linewidth=2, color=colors[prev_day_type])
-        x_vals = [peak_rental_df["dteday"].iloc[i]]
-        y_vals = [peak_rental_df["hr"].iloc[i]]
-        prev_day_type = current_day_type
-        
-# Menambahkan legenda di pojok kiri atas untuk tiap jenis warna garis
-legend_labels = [plt.Line2D([0], [0], color="skyblue", marker='o', linestyle='', markersize=8, label="Hari Kerja"),
-                plt.Line2D([0], [0], color="orange", marker='o', linestyle='', markersize=8, label="Akhir Pekan")]
-ax.legend(handles=legend_labels, loc="upper left")
+    # Menandai titik tertinggi
+    max_point = subset.nlargest(1, "cnt_hour")
+    ax.scatter(max_point["hr"], max_point["cnt_hour"], color='red', s=100, edgecolors='black', zorder=3)
 
-# Menampilkan grafik puncak penyewaan
-ax.set_ylabel("[Rental Peak Hours]", fontsize=15)
-ax.set_yticks([0, 4, 8, 12, 16, 20, 24])
-ax.tick_params(axis='y', labelsize=12)
-ax.tick_params(axis='x', labelsize=10)
+# Menambahkan label dan judul
+ax.set_xlabel("[Hour]")
+ax.set_ylabel("[Average Bike Rental]")
+ax.set_title(f"Bike Rental Patterns By Hour\n({start_date} s.d. {end_date})")
+ax.legend()
+ax.grid(True)
+
+# Menampilkan plot di Streamlit
 st.pyplot(fig)
 
 # Caption
